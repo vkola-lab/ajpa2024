@@ -1,0 +1,16 @@
+----------------- Options ---------------
+          checkpoints_dir: ./checkpoints                 
+              color_scale: 0.26                          
+                 dataroot: /data_1/PCGA_histology/CuratedData/Rushins_Data_DNT/CPTAC/ROIs1024/	[default: None]
+        downsample_factor: 4                             
+     enforce_connectivity: True                          	[default: False]
+                     fdim: 20                            
+                  gpu_ids: 0                             
+                   n_iter: 10                            
+                     name: experiment_name               
+                    nspix: 49                            
+                pos_scale: 2.5                           
+               slide_list: slides.csv                    
+                slideroot: /SeaExp/RushinTest/SPixel-FCN/CPTAC
+                   weight: None                          
+----------------- End -------------------
