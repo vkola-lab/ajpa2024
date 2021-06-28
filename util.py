@@ -4,6 +4,12 @@ import random
 import torch
 from sklearn.model_selection import StratifiedKFold
 
+def read_file(file_name):
+    with open(file_name, 'r') as f:
+        records = list(f)
+
+    return records
+
 class S2VGraph(object):
     def __init__(self, g, label, node_tags=None, node_features=None):
         '''
@@ -81,7 +87,7 @@ def load_data(dataset, degree_as_tag):
 
             g_list.append(S2VGraph(g, l, node_tags))
 
-    #add labels and edge_mat       
+    #add labels and edge_mat
     for g in g_list:
         g.neighbors = [[] for i in range(len(g.g))]
         for i, j in g.g.edges():
@@ -105,7 +111,7 @@ def load_data(dataset, degree_as_tag):
         for g in g_list:
             g.node_tags = list(dict(g.g.degree).values())
 
-    #Extracting unique tag labels   
+    #Extracting unique tag labels
     tagset = set([])
     for g in g_list:
         tagset = tagset.union(set(g.node_tags))
@@ -139,5 +145,3 @@ def separate_data(graph_list, seed, fold_idx):
     test_graph_list = [graph_list[i] for i in test_idx]
 
     return train_graph_list, test_graph_list
-
-
