@@ -19,7 +19,7 @@ class S2VGraph(object):
         self.node_features = node_features
         self.edge_mat = edge_mat
 
-class CPTAC_Nodes(data.dataset):
+class CPTAC_Nodes(data.Dataset):
     def __init__(self, root, ids):
         super(CPTAC_Nodes, self).__init__()
 
@@ -52,4 +52,23 @@ class CPTAC_Nodes(data.dataset):
         return sample
 
     def __len__(self):
-        return len(ids)
+        return len(self.ids)
+
+if __name__ == '__main__':
+
+    def read_file(file_name):
+        with open(file_name, 'r') as f:
+            records = list(f)
+
+        return records
+
+    train_file = '/home/rushin/Documents/Research/HighResCNN/temp/CPTAC/train_wsi.txt'
+    train_ids = read_file(train_file)
+
+    root = '/home/rushin/Documents/Research/HighResCNN/temp/CPTAC'
+    train_graphs = CPTAC_Nodes(root, train_ids)
+
+    print(train_graphs.classdict)
+
+    graph_obj = train_graphs[0]
+    print(graph_obj.id, graph_obj.label, graph_obj.node_features.shape, graph_obj.edge_mat.shape)

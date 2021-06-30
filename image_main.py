@@ -10,9 +10,10 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils.data as data
 
-
 from util import load_data, separate_data, read_file
+from data.cptac import CPTAC_Nodes
 from models.graphcnn import GraphCNN
+
 
 def train(args, model, device, train_graphs, optimizer, epoch):
     model.train()
@@ -105,7 +106,7 @@ def main():
                         help='number of layers INCLUDING the input one (default: 5)')
     parser.add_argument('--num_mlp_layers', type=int, default=2,
                         help='number of layers for MLP EXCLUDING the input one (default: 2). 1 means linear model.')
-    parser.add_argument('--input_dim', type=int, default=5,
+    parser.add_argument('--input_dim', type=int, default=3,
                         help='number of input channels (default: 5) options: 5 | 20 | 64 | 512')
     parser.add_argument('--hidden_dim', type=int, default=64,
                         help='number of hidden units (default: 64)')
@@ -142,7 +143,7 @@ def main():
         train_graphs = CPTAC_Nodes(root, train_ids)
         test_graphs = CPTAC_Nodes(root, test_ids)
 
-    num_classes = len(train_dataset.classdict)
+    num_classes = len(train_graphs.classdict)
 
     model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type, args.neighbor_pooling_type, device).to(device)
 
