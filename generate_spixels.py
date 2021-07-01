@@ -89,7 +89,7 @@ class BuildGraph(object):
             y = int(coord[-1]) * int(patch.size[0]) # row
 
             points.append([x, y])
-            graph_features.append(torch.tensor([0,0,0]))
+            graph_features.append(torch.tensor([0,0,0], dtype=torch.float))
             # call slic_lab(patch) or call basic(patch, (x, y))
 
             # stitch patches
@@ -119,7 +119,7 @@ class BuildGraph(object):
 
 def main():
     parser = argparse.ArgumentParser(description='PyTorch graph convolutional neural net for whole-graph classification')
-    parser.add_argument('--root', type=str, default='/home/rushin/Documents/Research/HighResCNN/temp/CPTAC', help='root directory of all preprocessed slides')
+    parser.add_argument('--root', type=str, default='dataset/CPTAC', help='root directory of all preprocessed slides')
     parser.add_argument('--slide', required=True, type=str, default='', help='name of slide')
     parser.add_argument('--svs_root', type=str, default='/home/rushin/Documents/Research/HighResCNN/temp/SVS_Files/', help='root directory where all svs are stored')
     parser.add_argument('--out_suffix', type = str, default = '_overlay', help='output file suffix')

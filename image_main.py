@@ -14,6 +14,7 @@ from util import load_data, separate_data, read_file
 from data.cptac import CPTAC_Nodes
 from models.graphcnn import GraphCNN
 
+criterion = nn.CrossEntropyLoss()
 
 def train(args, model, device, train_graphs, optimizer, epoch):
     model.train()
@@ -147,7 +148,6 @@ def main():
 
     model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type, args.neighbor_pooling_type, device).to(device)
 
-    criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
 

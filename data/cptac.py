@@ -47,7 +47,7 @@ class CPTAC_Nodes(data.Dataset):
             adj_s = torch.ones(features.shape[0], features.shape[0])
 
         # features = features.unsqueeze(0)
-        sample = S2VGraph(id=file_name, node_features=features, edge_mat=adj_s, label=label)
+        sample = S2VGraph(id=file_name, node_features=features, edge_mat=adj_s, label=self.classdict[label])
 
         return sample
 
