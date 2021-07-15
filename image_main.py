@@ -159,7 +159,7 @@ def main():
     if not os.path.exists(exp_save_path):
         os.makedirs(exp_save_path)
 
-    writer = SummaryWriter(os.path.join('runs', args.exp_name))
+    writer = SummaryWriter(os.path.join('runs', args.exp_name+"_fold"+args.fold_idx))
 
     #set up seeds and gpu device
     torch.manual_seed(0)
@@ -204,7 +204,11 @@ def main():
 
         if epoch % args.val_freq == 0:
             acc_val, cm = validate(args, model, device, val_graphs, epoch)
-            max_acc = max(max_acc, acc_val)
+            # max_acc = max(max_acc, acc_val)
+
+            if acc_val > max_acc:
+                max_acc = acc_val
+                torch.save(model.state_dict(), os.path.join(exp_save_path, "best_model.pth"))
 
             cm_plot = plot_confusion_matrix(cm, train_graphs.classdict.keys())
             # '''
@@ -221,10 +225,12 @@ def main():
         writer.add_scalar('Loss/Train', avg_loss, epoch)
         writer.add_scalar('Accuracy/Train', avg_acc_train, epoch)
 
+    torch.save(model.state_dict(), os.path.join(exp_save_path, "model_fold"+args.fold_idx+".pth"))
+
     # with open(str(args.dataset)+'acc_results.txt', 'a+') as f:
     #     f.write(str(max_acc) + '\n')
 
-    
+
 
 
 if __name__ == '__main__':
