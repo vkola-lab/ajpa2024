@@ -117,9 +117,11 @@ def main():
                         help='# of worker processes to load and process data from')
 
     # training based arguments
+    parser.add_argument('--phase', type=str, default="train",
+                        help='Phase of computation : train | test')
     parser.add_argument('--device', type=int, default=0,
                         help='which gpu to use if any (default: 0)')
-    parser.add_argument('--iters_per_epoch', type=int, default=200,
+    parser.add_argument('--iters_per_epoch', type=int, default=100,
                         help='number of iterations per each epoch (default: 200)')
     parser.add_argument('--epochs', type=int, default=350,
                         help='number of epochs to train (default: 350)')
@@ -170,68 +172,92 @@ def main():
 
     # read file from the respective data folder.
     root = 'dataset/%s/' % (args.dataset)
-    train_file = 'dataset/%s/train_wsi.txt' % (args.dataset)
-    wsi_ids = read_file(train_file)
+    wsi_file = 'dataset/%s/%s_wsi.txt' % (args.dataset, args.phase)
+    wsi_ids = read_file(wsi_file)
 
     # test_file = 'dataset/%s/test_wsi.txt' % (args.dataset)
     # test_ids = read_file(test_file)
 
-    if 'CPTAC' in args.dataset:
-        fdim = args.input_dim
-        train_ids, val_ids = separate_data(wsi_ids, args.seed, args.n_folds, args.fold_idx)
-        train_graphs = CPTAC_Nodes(root, train_ids, fdim)
-        val_graphs = CPTAC_Nodes(root, val_ids, fdim)
+    if args.phase == 'train':
+
+        if 'CPTAC' in args.dataset:
+            fdim = args.input_dim
+            train_ids, val_ids = separate_data(wsi_ids, args.seed, args.n_folds, args.fold_idx)
+            train_graphs = CPTAC_Nodes(root, train_ids, fdim)
+            val_graphs = CPTAC_Nodes(root, val_ids, fdim)
+
+            train_dataloader = DataLoader(train_graphs, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=False, drop_last=True, collate_fn=lambda data: data)
+            val_dataloader = DataLoader(val_graphs, batch_size=1, shuffle=False, num_workers=args.workers, pin_memory=False, collate_fn=lambda data: data)
+
+            num_classes = len(train_graphs.classdict)
+            model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type, args.neighbor_pooling_type, device).to(device)
+
+            optimizer = optim.Adam(model.parameters(), lr=args.lr)
+            scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.5)
+
+            max_acc = 0.0
+            for epoch in range(1, args.epochs + 1):
+                scheduler.step()
+
+                avg_loss, avg_acc_train = train(args, model, device, train_dataloader, optimizer, epoch)
+
+                if epoch % args.val_freq == 0:
+                    acc_val, cm = validate(args, model, device, val_graphs, epoch)
+                    # max_acc = max(max_acc, acc_val)
+
+                    if acc_val > max_acc:
+                        max_acc = acc_val
+                        torch.save(model.state_dict(), os.path.join(exp_save_path, "best_model_fold"+str(args.fold_idx)+".pth"))
+
+                    cm_plot = plot_confusion_matrix(cm, train_graphs.classdict.keys())
+                    # '''
+                    if not args.outfile == "":
+                        with open(os.path.join(exp_save_path, args.outfile), 'a+') as f:
+                            f.write("%f %f %f" % (avg_loss, avg_acc_train, acc_val))
+                            f.write("\n")
+                    print("")
+                    print(model.eps)
+
+                    writer.add_scalar('Accuracy/Val', acc_val, epoch)
+                    writer.add_figure('Confusion_Matrix', cm_plot, epoch)
+
+                writer.add_scalar('Loss/Train', avg_loss, epoch)
+                writer.add_scalar('Accuracy/Train', avg_acc_train, epoch)
+
+            torch.save(model.state_dict(), os.path.join(exp_save_path, "model_fold"+str(args.fold_idx)+".pth"))
+
+    elif args.phase == 'test':
+
+        test_graphs = CPTAC_Nodes(root, wsi_ids, fdim)
+        num_classes = len(test_graphs.classdict)
+
+        model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type, args.neighbor_pooling_type, device).to(device)
+
+        outputs = []
+        labels = []
+        idx = np.arange(len(test_graphs))
+        for i in range(0, len(test_graphs)):
+            outputs.append(model(graph).detach())
+            labels.append(graph.label)
+
+        outputs = torch.cat(outputs, 0)
+        pred = outputs.max(1, keepdim=True)[1]
+        labels = torch.LongTensor(labels).to(device)
+        correct = pred.eq(labels.view_as(pred)).sum().cpu().item()
+
+        cm = confusion_matrix(labels.cpu().numpy(), pred.cpu().numpy())
+        acc_test = correct / float(len(test_graphs))
+
+        cm_plot = plot_confusion_matrix(cm, test_graphs.classdict.keys())
+
+        print('accuracy test %f': % (acc_test))
+        writer.add_figure('%s_Test_Confusion_Matrix' % (args.fold_idx), cm_plot, 1)
 
     # print(len(train_graphs), len(val_graphs))
-
-    train_dataloader = DataLoader(train_graphs, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=False, drop_last=True, collate_fn=lambda data: data)
-    val_dataloader = DataLoader(val_graphs, batch_size=1, shuffle=False, num_workers=args.workers, pin_memory=False, collate_fn=lambda data: data)
-
-    num_classes = len(train_graphs.classdict)
     # print(num_classes, graphs.classdict)
-
-
-    model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type, args.neighbor_pooling_type, device).to(device)
-
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.5)
-
-    max_acc = 0.0
-    for epoch in range(1, args.epochs + 1):
-        scheduler.step()
-
-        avg_loss, avg_acc_train = train(args, model, device, train_dataloader, optimizer, epoch)
-
-        if epoch % args.val_freq == 0:
-            acc_val, cm = validate(args, model, device, val_graphs, epoch)
-            # max_acc = max(max_acc, acc_val)
-
-            if acc_val > max_acc:
-                max_acc = acc_val
-                torch.save(model.state_dict(), os.path.join(exp_save_path, "best_model_fold"+str(args.fold_idx)+".pth"))
-
-            cm_plot = plot_confusion_matrix(cm, train_graphs.classdict.keys())
-            # '''
-            if not args.outfile == "":
-                with open(os.path.join(exp_save_path, args.outfile), 'a+') as f:
-                    f.write("%f %f %f" % (avg_loss, avg_acc_train, acc_val))
-                    f.write("\n")
-            print("")
-            print(model.eps)
-
-            writer.add_scalar('Accuracy/Val', acc_val, epoch)
-            writer.add_figure('Confusion_Matrix', cm_plot, epoch)
-
-        writer.add_scalar('Loss/Train', avg_loss, epoch)
-        writer.add_scalar('Accuracy/Train', avg_acc_train, epoch)
-
-    torch.save(model.state_dict(), os.path.join(exp_save_path, "model_fold"+str(args.fold_idx)+".pth"))
 
     # with open(str(args.dataset)+'acc_results.txt', 'a+') as f:
     #     f.write(str(max_acc) + '\n')
-
-
-
 
 if __name__ == '__main__':
     main()
