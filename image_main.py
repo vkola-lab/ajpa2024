@@ -119,6 +119,8 @@ def main():
     # training based arguments
     parser.add_argument('--phase', type=str, default="train",
                         help='Phase of computation : train | test')
+    parser.add_argument('--weights', type=str, default="best_model_fold0.pth",
+                        help='Loading weights for test phase')
     parser.add_argument('--device', type=int, default=0,
                         help='which gpu to use if any (default: 0)')
     parser.add_argument('--iters_per_epoch', type=int, default=100,
@@ -232,6 +234,9 @@ def main():
         num_classes = len(test_graphs.classdict)
 
         model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type, args.neighbor_pooling_type, device).to(device)
+        if args.weights is not None:
+            model.load_state_dict(torch.load(args.weights))
+            model.eval()
 
         outputs = []
         labels = []
