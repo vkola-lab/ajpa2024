@@ -125,8 +125,8 @@ def main():
                         help='number of epochs to train (default: 350)')
     parser.add_argument('--val_freq', type=int, default=5,
                         help='validate the model after "n" intervals of training')
-    parser.add_argument('--lr', type=float, default=0.01,
-                        help='learning rate (default: 0.01)')
+    parser.add_argument('--lr', type=float, default=0.001,
+                        help='learning rate (default: 0.001)')
     parser.add_argument('--seed', type=int, default=0,
                         help='random seed for splitting the dataset into 10 (default: 0)')
 
@@ -159,7 +159,7 @@ def main():
     if not os.path.exists(exp_save_path):
         os.makedirs(exp_save_path)
 
-    writer = SummaryWriter(os.path.join('runs', args.exp_name+"_fold"+args.fold_idx))
+    writer = SummaryWriter(os.path.join('runs', args.exp_name+"_fold"+str(args.fold_idx)))
 
     #set up seeds and gpu device
     torch.manual_seed(0)
@@ -194,7 +194,7 @@ def main():
     model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type, args.neighbor_pooling_type, device).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.5)
 
     max_acc = 0.0
     for epoch in range(1, args.epochs + 1):
@@ -208,7 +208,7 @@ def main():
 
             if acc_val > max_acc:
                 max_acc = acc_val
-                torch.save(model.state_dict(), os.path.join(exp_save_path, "best_model.pth"))
+                torch.save(model.state_dict(), os.path.join(exp_save_path, "best_model_fold"+str(args.fold_idx)+".pth"))
 
             cm_plot = plot_confusion_matrix(cm, train_graphs.classdict.keys())
             # '''
@@ -225,7 +225,7 @@ def main():
         writer.add_scalar('Loss/Train', avg_loss, epoch)
         writer.add_scalar('Accuracy/Train', avg_acc_train, epoch)
 
-    torch.save(model.state_dict(), os.path.join(exp_save_path, "model_fold"+args.fold_idx+".pth"))
+    torch.save(model.state_dict(), os.path.join(exp_save_path, "model_fold"+str(args.fold_idx)+".pth"))
 
     # with open(str(args.dataset)+'acc_results.txt', 'a+') as f:
     #     f.write(str(max_acc) + '\n')
