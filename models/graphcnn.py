@@ -54,6 +54,35 @@ class GraphCNN(nn.Module):
                 self.linears_prediction.append(nn.Linear(hidden_dim, output_dim))
 
 
+    def __preprocess_neighbors_maxpool(self, batch_graph):
+        ###create padded_neighbor_list in concatenated graph
+
+        #compute the maximum number of neighbors within the graphs in the current minibatch
+        max_deg = max([graph.max_neighbor for graph in batch_graph])
+
+        padded_neighbor_list = []
+        start_idx = [0]
+
+
+        for i, graph in enumerate(batch_graph):
+            start_idx.append(start_idx[i] + len(graph.g))
+            padded_neighbors = []
+            for j in range(len(graph.neighbors)):
+                #add off-set values to the neighbor indices
+                pad = [n + start_idx[i] for n in graph.neighbors[j]]
+                #padding, dummy data is assumed to be stored in -1
+                pad.extend([-1]*(max_deg - len(pad)))
+
+                #Add center nodes in the maxpooling if learn_eps is False, i.e., aggregate center nodes and neighbor nodes altogether.
+                if not self.learn_eps:
+                    pad.append(j + start_idx[i])
+
+                padded_neighbors.append(pad)
+            padded_neighbor_list.extend(padded_neighbors)
+
+        return torch.LongTensor(padded_neighbor_list)
+
+
     def __preprocess_neighbors_sumavepool(self, batch_graph):
         ###create block diagonal sparse matrix
 
@@ -106,6 +135,13 @@ class GraphCNN(nn.Module):
 
         return graph_pool.to(self.device)
 
+    def maxpool(self, h, padded_neighbor_list):
+        ###Element-wise minimum will never affect max-pooling
+
+        dummy = torch.min(h, dim = 0)[0]
+        h_with_dummy = torch.cat([h, dummy.reshape((1, -1)).to(self.device)])
+        pooled_rep = torch.max(h_with_dummy[padded_neighbor_list], dim = 1)[0]
+        return pooled_rep
 
 
     def next_layer_eps(self, h, layer, padded_neighbor_list = None, Adj_block = None):
@@ -160,22 +196,22 @@ class GraphCNN(nn.Module):
         X_concat = torch.cat([graph.node_features for graph in batch_graph], 0).to(self.device)
         graph_pool = self.__preprocess_graphpool(batch_graph)
 
-        # if self.neighbor_pooling_type == "max":
-        #     padded_neighbor_list = self.__preprocess_neighbors_maxpool(batch_graph)
-        # else:
-        Adj_block = self.__preprocess_neighbors_sumavepool(batch_graph)
+        if self.neighbor_pooling_type == "max":
+            padded_neighbor_list = self.__preprocess_neighbors_maxpool(batch_graph)
+        else:
+            Adj_block = self.__preprocess_neighbors_sumavepool(batch_graph)
 
         #list of hidden representation at each layer (including input)
         hidden_rep = [X_concat]
         h = X_concat
 
         for layer in range(self.num_layers-1):
-            # if self.neighbor_pooling_type == "max" and self.learn_eps:
-            #     h = self.next_layer_eps(h, layer, padded_neighbor_list = padded_neighbor_list)
+            if self.neighbor_pooling_type == "max" and self.learn_eps:
+                h = self.next_layer_eps(h, layer, padded_neighbor_list = padded_neighbor_list)
             if not self.neighbor_pooling_type == "max" and self.learn_eps:
                 h = self.next_layer_eps(h, layer, Adj_block = Adj_block)
-            # elif self.neighbor_pooling_type == "max" and not self.learn_eps:
-            #     h = self.next_layer(h, layer, padded_neighbor_list = padded_neighbor_list)
+            elif self.neighbor_pooling_type == "max" and not self.learn_eps:
+                h = self.next_layer(h, layer, padded_neighbor_list = padded_neighbor_list)
             elif not self.neighbor_pooling_type == "max" and not self.learn_eps:
                 h = self.next_layer(h, layer, Adj_block = Adj_block)
 
@@ -189,40 +225,3 @@ class GraphCNN(nn.Module):
             score_over_layer += F.dropout(self.linears_prediction[layer](pooled_h), self.final_dropout, training = self.training)
 
         return score_over_layer
-
-
-    # def maxpool(self, h, padded_neighbor_list):
-    #     ###Element-wise minimum will never affect max-pooling
-    #
-    #     dummy = torch.min(h, dim = 0)[0]
-    #     h_with_dummy = torch.cat([h, dummy.reshape((1, -1)).to(self.device)])
-    #     pooled_rep = torch.max(h_with_dummy[padded_neighbor_list], dim = 1)[0]
-    #     return pooled_rep
-
-    # def __preprocess_neighbors_maxpool(self, batch_graph):
-    #     ###create padded_neighbor_list in concatenated graph
-    #
-    #     #compute the maximum number of neighbors within the graphs in the current minibatch
-    #     max_deg = max([graph.max_neighbor for graph in batch_graph])
-    #
-    #     padded_neighbor_list = []
-    #     start_idx = [0]
-    #
-    #
-    #     for i, graph in enumerate(batch_graph):
-    #         start_idx.append(start_idx[i] + len(graph.g))
-    #         padded_neighbors = []
-    #         for j in range(len(graph.neighbors)):
-    #             #add off-set values to the neighbor indices
-    #             pad = [n + start_idx[i] for n in graph.neighbors[j]]
-    #             #padding, dummy data is assumed to be stored in -1
-    #             pad.extend([-1]*(max_deg - len(pad)))
-    #
-    #             #Add center nodes in the maxpooling if learn_eps is False, i.e., aggregate center nodes and neighbor nodes altogether.
-    #             if not self.learn_eps:
-    #                 pad.append(j + start_idx[i])
-    #
-    #             padded_neighbors.append(pad)
-    #         padded_neighbor_list.extend(padded_neighbors)
-    #
-    #     return torch.LongTensor(padded_neighbor_list)
