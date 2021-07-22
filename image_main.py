@@ -229,21 +229,21 @@ def main():
             torch.save(model.state_dict(), os.path.join(exp_save_path, "model_fold"+str(args.fold_idx)+".pth"))
 
     elif args.phase == 'test':
-
+        fdim = args.input_dim
         test_graphs = CPTAC_Nodes(root, wsi_ids, fdim)
         num_classes = len(test_graphs.classdict)
 
         model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type, args.neighbor_pooling_type, device).to(device)
         if args.weights is not None:
-            model.load_state_dict(torch.load(args.weights))
+            model.load_state_dict(torch.load(os.path.join(exp_save_path, args.weights)))
             model.eval()
 
         outputs = []
         labels = []
         idx = np.arange(len(test_graphs))
         for i in range(0, len(test_graphs)):
-            outputs.append(model(graph).detach())
-            labels.append(graph.label)
+            outputs.append(model([test_graphs[i]]).detach())
+            labels.append(test_graphs[i].label)
 
         outputs = torch.cat(outputs, 0)
         pred = outputs.max(1, keepdim=True)[1]
@@ -255,7 +255,7 @@ def main():
 
         cm_plot = plot_confusion_matrix(cm, test_graphs.classdict.keys())
 
-        print('accuracy test %f': % (acc_test))
+        print('accuracy test %f:' % (acc_test))
         writer.add_figure('%s_Test_Confusion_Matrix' % (args.fold_idx), cm_plot, 1)
 
     # print(len(train_graphs), len(val_graphs))
