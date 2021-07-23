@@ -21,7 +21,93 @@ from util import read_file
 from data.cptac import CPTAC_Nodes, separate_data
 from models.graphcnn import GraphCNN
 
+from ray import tune
+from ray.tune import CLIReporter
+from ray.tune.schedulers import ASHAScheduler
+from functools import partial
+
 criterion = nn.CrossEntropyLoss()
+
+def train_network(args, writer, device, exp_save_path):
+
+    if 'CPTAC' in args.dataset:
+
+            train_graphs, val_graphs = load_data(args)
+
+            train_dataloader = DataLoader(train_graphs, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=False, drop_last=True, collate_fn=lambda data: data)
+            val_dataloader = DataLoader(val_graphs, batch_size=1, shuffle=False, num_workers=args.workers, pin_memory=False, collate_fn=lambda data: data)
+
+            num_classes = len(train_graphs.classdict)
+            model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type, args.neighbor_pooling_type, device)
+            if torch.cuda.device_count() > 1:
+                model = nn.DataParallel(model)
+            model.to(device)
+
+            optimizer = optim.Adam(model.parameters(), args.lr)
+            scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.5)
+
+            max_acc = 0.0
+            for epoch in range(1, args.epochs + 1):
+                scheduler.step()
+
+                avg_loss, avg_acc_train = train(args, model, device, train_dataloader, optimizer, epoch)
+
+                if epoch % args.val_freq == 0:
+                    acc_val, loss_val, cm = validate(args, model, device, val_graphs, epoch)
+                    # max_acc = max(max_acc, acc_val)
+
+                    if acc_val > max_acc:
+                        max_acc = acc_val
+                        torch.save(model.state_dict(), os.path.join(exp_save_path, "best_model_fold"+str(args.fold_idx)+".pth"))
+
+                    cm_plot = plot_confusion_matrix(cm, train_graphs.classdict.keys())
+                    # '''
+                    if not args.outfile == "":
+                        with open(os.path.join(exp_save_path, args.outfile), 'a+') as f:
+                            f.write("%f %f %f" % (avg_loss, avg_acc_train, acc_val))
+                            f.write("\n")
+                    print("")
+                    print(model.eps)
+
+                    writer.add_scalar('Accuracy/Val', acc_val, epoch)
+                    writer.add_figure('Confusion_Matrix', cm_plot, epoch)
+
+                    # tune.report(loss=(loss_val), accuracy=acc_val)
+
+                writer.add_scalar('Loss/Train', avg_loss, epoch)
+                writer.add_scalar('Accuracy/Train', avg_acc_train, epoch)
+
+            torch.save(model.state_dict(), os.path.join(exp_save_path, "model_fold"+str(args.fold_idx)+".pth"))
+
+def test_network(args, writer, model, device):
+    if 'CPTAC' in args.dataset:
+
+        test_graphs = load_data(args)
+        num_classes = len(test_graphs.classdict)
+
+        model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type, args.neighbor_pooling_type, device).to(device)
+
+        outputs = []
+        labels = []
+        idx = np.arange(len(test_graphs))
+        for i in range(0, len(test_graphs)):
+            outputs.append(model([test_graphs[i]]).detach())
+            labels.append(test_graphs[i].label)
+
+        outputs = torch.cat(outputs, 0)
+        pred = outputs.max(1, keepdim=True)[1]
+        labels = torch.LongTensor(labels).to(device)
+        correct = pred.eq(labels.view_as(pred)).sum().cpu().item()
+
+        cm = confusion_matrix(labels.cpu().numpy(), pred.cpu().numpy())
+        acc_test = correct / float(len(test_graphs))
+
+        cm_plot = plot_confusion_matrix(cm, test_graphs.classdict.keys())
+
+        print('accuracy test %f:' % (acc_test))
+        writer.add_figure('%s_Test_Confusion_Matrix' % (args.fold_idx), cm_plot, 1)
+
+        return acc_test
 
 def train(args, model, device, train_dataloader, optimizer, epoch):
     model.train()
@@ -65,7 +151,7 @@ def train(args, model, device, train_dataloader, optimizer, epoch):
 
     pbar.close()
 
-    average_loss = loss_accum/total_iters
+    average_loss = loss_accum/ total_iters
     average_acc = correct_accum / float(total_iters * args.batch_size)
 
     print("loss training: %f accuracy training: %f" % (average_loss, average_acc))
@@ -74,20 +160,33 @@ def train(args, model, device, train_dataloader, optimizer, epoch):
     return average_loss, average_acc
 
 ###pass data to model with minibatch during testing to avoid memory overflow (does not perform backpropagation)
-def pass_data_iteratively(model, graphs, minibatch_size = 3):
+def pass_data_iteratively(model, graphs, device, minibatch_size = 3):
     output = []
+    losses = []
+    loss_accum = 0
+
     idx = np.arange(len(graphs))
     for i in range(0, len(graphs), minibatch_size):
         sampled_idx = idx[i:i+minibatch_size]
         if len(sampled_idx) == 0:
             continue
-        output.append(model([graphs[j] for j in sampled_idx]).detach())
-    return torch.cat(output, 0)
+        op = model([graphs[j] for j in sampled_idx])
+        labels = torch.LongTensor([graphs[j].label for j in sampled_idx]).to(device)
+
+        # compute loss
+        loss = criterion(op, labels).detach().cpu().numpy()
+        loss_accum += loss    
+
+        output.append(op.detach())
+
+    avg_loss = loss_accum / len(output)
+
+    return torch.cat(output, 0), avg_loss
 
 def validate(args, model, device, val_graphs, epoch):
     model.eval()
 
-    output = pass_data_iteratively(model, val_graphs)
+    output, loss_val = pass_data_iteratively(model, val_graphs, device)
     pred = output.max(1, keepdim=True)[1]
     labels = torch.LongTensor([graph.label for graph in val_graphs]).to(device)
     correct = pred.eq(labels.view_as(pred)).sum().cpu().item()
@@ -97,7 +196,29 @@ def validate(args, model, device, val_graphs, epoch):
 
     print("accuracy validation: %f" % (acc_val))
 
-    return acc_val, cm
+    return acc_val, loss_val, cm
+
+def load_data(args):
+   
+    # read file from the respective data folder.
+    root = 'dataset/%s/' % (args.dataset)
+    wsi_file = 'dataset/%s/%s_wsi.txt' % (args.dataset, args.phase)
+    wsi_ids = read_file(wsi_file)
+    fdim = args.input_dim
+    
+    if 'CPTAC' in args.dataset:
+        if 'train' in wsi_file:
+
+            train_ids, val_ids = separate_data(wsi_ids, args.seed, args.n_folds, args.fold_idx)
+            train_graphs = CPTAC_Nodes(root, train_ids, fdim)
+            val_graphs = CPTAC_Nodes(root, val_ids, fdim)
+
+            return train_graphs, val_graphs
+        
+        if 'test' in wsi_file:
+            test_graphs = CPTAC_Nodes(root, wsi_ids, fdim)
+            return test_graphs
+
 
 def main():
     # Training settings
@@ -159,110 +280,28 @@ def main():
                                         help='output file')
     args = parser.parse_args()
 
+    writer = SummaryWriter(os.path.join('runs', args.exp_name+"_fold"+str(args.fold_idx)))
+
     exp_save_path = os.path.join('log', args.exp_name)
     if not os.path.exists(exp_save_path):
         os.makedirs(exp_save_path)
 
-    writer = SummaryWriter(os.path.join('runs', args.exp_name+"_fold"+str(args.fold_idx)))
-
     #set up seeds and gpu device
     torch.manual_seed(0)
     np.random.seed(0)
-    device = torch.device("cuda:" + str(args.device)) if torch.cuda.is_available() else torch.device("cpu")
+    
+    device = "cpu"
     if torch.cuda.is_available():
+        device = "cuda:0"
         torch.cuda.manual_seed_all(0)
 
-    # read file from the respective data folder.
-    root = 'dataset/%s/' % (args.dataset)
-    wsi_file = 'dataset/%s/%s_wsi.txt' % (args.dataset, args.phase)
-    wsi_ids = read_file(wsi_file)
-
-    # test_file = 'dataset/%s/test_wsi.txt' % (args.dataset)
-    # test_ids = read_file(test_file)
-
     if args.phase == 'train':
-
-        if 'CPTAC' in args.dataset:
-            fdim = args.input_dim
-            train_ids, val_ids = separate_data(wsi_ids, args.seed, args.n_folds, args.fold_idx)
-            train_graphs = CPTAC_Nodes(root, train_ids, fdim)
-            val_graphs = CPTAC_Nodes(root, val_ids, fdim)
-
-            train_dataloader = DataLoader(train_graphs, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=False, drop_last=True, collate_fn=lambda data: data)
-            val_dataloader = DataLoader(val_graphs, batch_size=1, shuffle=False, num_workers=args.workers, pin_memory=False, collate_fn=lambda data: data)
-
-            num_classes = len(train_graphs.classdict)
-            model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type, args.neighbor_pooling_type, device).to(device)
-
-            optimizer = optim.Adam(model.parameters(), lr=args.lr)
-            scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.5)
-
-            max_acc = 0.0
-            for epoch in range(1, args.epochs + 1):
-                scheduler.step()
-
-                avg_loss, avg_acc_train = train(args, model, device, train_dataloader, optimizer, epoch)
-
-                if epoch % args.val_freq == 0:
-                    acc_val, cm = validate(args, model, device, val_graphs, epoch)
-                    # max_acc = max(max_acc, acc_val)
-
-                    if acc_val > max_acc:
-                        max_acc = acc_val
-                        torch.save(model.state_dict(), os.path.join(exp_save_path, "best_model_fold"+str(args.fold_idx)+".pth"))
-
-                    cm_plot = plot_confusion_matrix(cm, train_graphs.classdict.keys())
-                    # '''
-                    if not args.outfile == "":
-                        with open(os.path.join(exp_save_path, args.outfile), 'a+') as f:
-                            f.write("%f %f %f" % (avg_loss, avg_acc_train, acc_val))
-                            f.write("\n")
-                    print("")
-                    print(model.eps)
-
-                    writer.add_scalar('Accuracy/Val', acc_val, epoch)
-                    writer.add_figure('Confusion_Matrix', cm_plot, epoch)
-
-                writer.add_scalar('Loss/Train', avg_loss, epoch)
-                writer.add_scalar('Accuracy/Train', avg_acc_train, epoch)
-
-            torch.save(model.state_dict(), os.path.join(exp_save_path, "model_fold"+str(args.fold_idx)+".pth"))
+        train_network(args, writer, device, exp_save_path)
 
     elif args.phase == 'test':
-        fdim = args.input_dim
-        test_graphs = CPTAC_Nodes(root, wsi_ids, fdim)
-        num_classes = len(test_graphs.classdict)
-
-        model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type, args.neighbor_pooling_type, device).to(device)
-        if args.weights is not None:
-            model.load_state_dict(torch.load(os.path.join(exp_save_path, args.weights)))
-            model.eval()
-
-        outputs = []
-        labels = []
-        idx = np.arange(len(test_graphs))
-        for i in range(0, len(test_graphs)):
-            outputs.append(model([test_graphs[i]]).detach())
-            labels.append(test_graphs[i].label)
-
-        outputs = torch.cat(outputs, 0)
-        pred = outputs.max(1, keepdim=True)[1]
-        labels = torch.LongTensor(labels).to(device)
-        correct = pred.eq(labels.view_as(pred)).sum().cpu().item()
-
-        cm = confusion_matrix(labels.cpu().numpy(), pred.cpu().numpy())
-        acc_test = correct / float(len(test_graphs))
-
-        cm_plot = plot_confusion_matrix(cm, test_graphs.classdict.keys())
-
-        print('accuracy test %f:' % (acc_test))
-        writer.add_figure('%s_Test_Confusion_Matrix' % (args.fold_idx), cm_plot, 1)
-
-    # print(len(train_graphs), len(val_graphs))
-    # print(num_classes, graphs.classdict)
-
-    # with open(str(args.dataset)+'acc_results.txt', 'a+') as f:
-    #     f.write(str(max_acc) + '\n')
+        test_acc = test_network(args, writer, device)
+        print("Best trial test set accuracy: {}".format(test_acc))
+        
 
 if __name__ == '__main__':
     main()
