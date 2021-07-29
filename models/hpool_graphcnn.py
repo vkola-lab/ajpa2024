@@ -4,17 +4,18 @@ import torch.nn.functional as F
 
 from torch_geometric.nn import GCNConv
 from torch_geometric.nn import GraphConv, TopKPooling
+from torch_geometric.nn import global_mean_pool as gap
 from torch_geometric.data import Data, Batch
 from torch_geometric import utils
 
-from layers import SAGPool
+from .layers import SAGPool
 
 import sys
 sys.path.append("models/")
 from mlp import MLP
 
 class GraphCNN(nn.Module):
-    def __init__(self, num_layers, num_mlp_layers, input_dim, hidden_dim, output_dim, final_dropout, learn_eps, pooling_ratio, neighbor_pooling_type, device):
+    def __init__(self, num_layers, num_mlp_layers, input_dim, hidden_dim, output_dim, final_dropout, learn_eps, graph_pooling_type, pooling_ratio, neighbor_pooling_type, device):
         '''
             num_layers: number of layers in the neural networks (INCLUDING the input layer)
             num_mlp_layers: number of layers in mlps (EXCLUDING the input layer)
@@ -23,6 +24,7 @@ class GraphCNN(nn.Module):
             output_dim: number of classes for prediction
             final_dropout: dropout ratio on the final linear layer
             learn_eps: If True, learn epsilon to distinguish center nodes from neighboring nodes. If False, aggregate neighbors and center nodes altogether.
+            graph_pooling_type: how to aggregate entire nodes in a graph (mean, average)
             neighbor_pooling_type: how to aggregate neighbors (mean, average, or max)
             device: which device to use
         '''
@@ -32,7 +34,7 @@ class GraphCNN(nn.Module):
         self.final_dropout = final_dropout
         self.device = device
         self.num_layers = num_layers
-        # self.graph_pooling_type = graph_pooling_type
+        self.graph_pooling_type = graph_pooling_type
         self.neighbor_pooling_type = neighbor_pooling_type
         self.learn_eps = learn_eps
         self.eps = nn.Parameter(torch.zeros(self.num_layers-1))
@@ -121,7 +123,7 @@ class GraphCNN(nn.Module):
         return Adj_block.to(self.device)
 
 
-    def __update_adjacency_matrix(batch, edge_index):
+    def __update_adjacency_matrix(self, batch, edge_index):
         ###create block diagonal sparse matrix
 
         edge_mat_list = edge_index
@@ -129,7 +131,7 @@ class GraphCNN(nn.Module):
         batch_graphs, counts = batch.unique(return_counts=True)
         for i, graph in enumerate(batch_graphs):
             start_idx.append(start_idx[i] + counts[i])
-        Adj_block_idx = torch.cat(edge_index, 1)
+        Adj_block_idx = edge_index.cpu()
         Adj_block_elem = torch.ones(Adj_block_idx.shape[1])
 
         #Add self-loops in the adjacency matrix if learn_eps is False, i.e., aggregate center nodes and neighbor nodes altogether.
@@ -232,8 +234,8 @@ class GraphCNN(nn.Module):
 
     def forward(self, batch_graph):
 
-        geometric_graphs = [ Data(x=graph.node_features, edge_index=graph.edge_mat, edge_attr=None, y=graph.label) for graph in batch_graph ]
-        geometric_batch = batch.from_data_list(geometric_graphs)
+        geometric_graphs = [ Data(x=graph.node_features, edge_index=graph.edge_mat, edge_attr=None, y=graph.label).to(self.device) for graph in batch_graph ]
+        geometric_batch = Batch.from_data_list(geometric_graphs)
 
         X_concat = torch.cat([graph.node_features for graph in batch_graph], 0).to(self.device)
         graph_pool = self.__preprocess_graphpool(batch_graph)
@@ -247,7 +249,7 @@ class GraphCNN(nn.Module):
         hidden_rep = [X_concat]
         h = X_concat
 
-        x, edge_index, batch = geometric_batch.x, geometric_batch.edge_index, geometric_batch.batch\
+        x, edge_index, batch = geometric_batch.x, geometric_batch.edge_index, geometric_batch.batch
         print(x.shape, edge_index.shape, batch.unique(return_counts=True))
         for layer in range(self.num_layers-1):
             if self.neighbor_pooling_type == "max" and self.learn_eps:
@@ -259,17 +261,18 @@ class GraphCNN(nn.Module):
             elif not self.neighbor_pooling_type == "max" and not self.learn_eps:
                 h = self.next_layer(h, layer, Adj_block = Adj_block)
 
-            h, edge_index, _ batch, _ = self.pool[layer](h, edge_index, None, batch)
+            h, edge_index, _, batch, _ = self.pool[layer](h, edge_index, None, batch)
 
             hidden_rep.append(h)
+            print(h.shape)
 
             Adj_block = self.__update_adjacency_matrix(batch, edge_index)
 
         score_over_layer = 0
 
         #perform pooling over all nodes in each graph in every layer
-        for layer, h in enumerate(hidden_rep):
+        for layer, h in enumerate(hidden_rep[1:]):
             pooled_h = torch.spmm(graph_pool, h)
-            score_over_layer += F.dropout(self.linears_prediction[layer](pooled_h), self.final_dropout, training = self.training)
+            score_over_layer += F.dropout(F.relu(self.linears_prediction[layer](pooled_h)), self.final_dropout, training = self.training)
 
         return score_over_layer

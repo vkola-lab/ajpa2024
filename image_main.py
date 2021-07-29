@@ -21,11 +21,6 @@ from util import read_file
 from data.cptac import CPTAC_Nodes, separate_data
 from models.graphcnn import GraphCNN
 
-from ray import tune
-from ray.tune import CLIReporter
-from ray.tune.schedulers import ASHAScheduler
-from functools import partial
-
 criterion = nn.CrossEntropyLoss()
 
 def train_network(args, writer, device, exp_save_path):
@@ -39,8 +34,6 @@ def train_network(args, writer, device, exp_save_path):
 
             num_classes = len(train_graphs.classdict)
             model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type, args.neighbor_pooling_type, device)
-            if torch.cuda.device_count() > 1:
-                model = nn.DataParallel(model)
             model.to(device)
 
             optimizer = optim.Adam(model.parameters(), args.lr)

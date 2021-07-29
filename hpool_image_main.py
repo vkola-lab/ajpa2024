@@ -33,7 +33,7 @@ def train_network(args, writer, device, exp_save_path):
             val_dataloader = DataLoader(val_graphs, batch_size=1, shuffle=False, num_workers=args.workers, pin_memory=False, collate_fn=lambda data: data)
 
             num_classes = len(train_graphs.classdict)
-            model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.pooling_ratio, args.neighbor_pooling_type, device)
+            model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type, args.pooling_ratio, args.neighbor_pooling_type, device)
             if torch.cuda.device_count() > 1:
                 model = nn.DataParallel(model)
             model.to(device)
@@ -80,7 +80,7 @@ def test_network(args, writer, model, device):
         test_graphs = load_data(args)
         num_classes = len(test_graphs.classdict)
 
-        model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.pooling_ratio, args.neighbor_pooling_type, device).to(device)
+        model = GraphCNN(args.num_layers, args.num_mlp_layers, args.input_dim, args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type, args.pooling_ratio, args.neighbor_pooling_type, device).to(device)
 
         outputs = []
         labels = []
@@ -262,6 +262,8 @@ def main():
     parser.add_argument('--final_dropout', type=float, default=0.5,
                         help='final layer dropout (default: 0.5)')
     parser.add_argument('--pooling_ratio', type=float, default=0.5, help='Pool the graph by 50%')
+    parser.add_argument('--graph_pooling_type', type=str, default="sum", choices=["sum", "average"],
+                        help='Pooling for over nodes in a graph: sum or average')
     parser.add_argument('--neighbor_pooling_type', type=str, default="sum", choices=["sum", "average", "max"],
                         help='Pooling for over neighboring nodes: sum, average or max')
     parser.add_argument('--learn_eps', action="store_true",
