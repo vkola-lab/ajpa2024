@@ -248,7 +248,7 @@ class GraphCNN(nn.Module):
         #list of hidden representation at each layer (including input)
         hidden_rep = [X_concat]
         h = X_concat
-
+        r = 0
         x, edge_index, batch = geometric_batch.x, geometric_batch.edge_index, geometric_batch.batch
         print(x.shape, edge_index.shape, batch.unique(return_counts=True))
         for layer in range(self.num_layers-1):
@@ -263,16 +263,18 @@ class GraphCNN(nn.Module):
 
             h, edge_index, _, batch, _ = self.pool[layer](h, edge_index, None, batch)
 
-            hidden_rep.append(h)
+            r += torch.cat([gmp(h, batch), gap(h, batch)], dim=1)
+            print(r.shape)
             print(h.shape)
+            hidden_rep.append(h)
 
             Adj_block = self.__update_adjacency_matrix(batch, edge_index)
 
         score_over_layer = 0
 
-        #perform pooling over all nodes in each graph in every layer
-        for layer, h in enumerate(hidden_rep[1:]):
-            pooled_h = torch.spmm(graph_pool, h)
-            score_over_layer += F.dropout(F.relu(self.linears_prediction[layer](pooled_h)), self.final_dropout, training = self.training)
-
-        return score_over_layer
+        # #perform pooling over all nodes in each graph in every layer
+        # for layer, h in enumerate(hidden_rep):
+        #     # pooled_h = torch.spmm(graph_pool, h)
+        #     score_over_layer += F.dropout(F.relu(self.linears_prediction[layer](pooled_h)), self.final_dropout, training = self.training)
+        #
+        # return score_over_layer
