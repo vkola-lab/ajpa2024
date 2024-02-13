@@ -1,4 +1,4 @@
-# Graph Perceiver Networks: Stratifying lung premalignant lesions from histopathology
+# Graph perceiver network for lung tumor and premalignant lesion stratification from histopathology
 <details>
 <summary>
   <b>Graph perceiver network for lung tumor and premalignant lesion stratification from histopathology</b>, in submission 2023.
