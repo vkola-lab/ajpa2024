@@ -1,0 +1,38 @@
+wandb_version: 1
+
+run_name:
+  value: Graph-Perciever_September-17
+dataset:
+  value: cptac
+data_config:
+  value: ctranspath_files
+n_folds:
+  value: 5
+
+phase:
+  value: test
+num_workers:
+  value: 0
+batch_size:
+  value: 1
+
+n_classes:
+  value: 3
+gnn:
+  value: gin
+num_layer:
+  value: 3
+drop_ratio:
+  value: 0
+emb_dim:
+  value: 64
+fdim:
+  value: 768
+graph_pooling:
+  value: gmt
+jk:
+  value: sum
+
+seed:
+  value: 1078
+

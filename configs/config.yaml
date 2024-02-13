@@ -1,0 +1,49 @@
+wandb_version: 1
+
+dataset:
+  value: tcga
+data_config:
+  value: ctranspath_files
+n_folds:
+  value: 5
+no_val:
+  value: False
+
+phase:
+  value: train
+l2_weight_decay:
+  value: 0.001
+lr:
+  value: 0.0003
+b:
+  value: 0
+lr_decay_iters:
+  value: 25
+lr_policy:
+  value: step
+num_workers:
+  value: 4
+batch_size:
+  value: 8
+n_epochs:
+  value: 30
+
+n_classes:
+  value: 3
+gnn:
+  value: gin
+num_layer:
+  value: 3
+drop_ratio:
+  value: 0.2
+emb_dim:
+  value: 64
+fdim:
+  value: 768
+graph_pooling:
+  value: gmt
+jk:
+  value: sum
+seed:
+  value: 1078
+

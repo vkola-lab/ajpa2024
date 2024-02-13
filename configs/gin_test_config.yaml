@@ -1,0 +1,38 @@
+wandb_version: 1
+
+run_name:
+  value: 5GIN-BCE-8Batch
+dataset:
+  value: tcga
+data_config:
+  value: ctranspath_files
+n_folds:
+  value: 3
+
+phase:
+  value: test
+num_workers:
+  value: 4
+batch_size:
+  value: 8
+
+n_classes:
+  value: 3
+gnn:
+  value: gin
+num_layer:
+  value: 5
+drop_ratio:
+  value: 0
+emb_dim:
+  value: 64
+fdim:
+  value: 768
+graph_pooling:
+  value: sum
+jk:
+  value: sum
+
+seed:
+  value: 1078
+
