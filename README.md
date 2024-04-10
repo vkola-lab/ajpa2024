@@ -2,7 +2,7 @@
 <details>
 <summary>
   <b>This work is published in the</b>
-  <a href="https://doi.org/10.1016/j.ajpath.2024.03.009" target="blank">[American Journal of Pathology]</a>
+  <a href="https://doi.org/10.1016/j.ajpath.2024.03.009" target="blank">[American Journal of Pathology]</a>.
 </summary>
 
 ```bash
