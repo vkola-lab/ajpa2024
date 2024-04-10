@@ -6,16 +6,13 @@
 </summary>
 
 ```bash
-@article {Gindra2023.10.16.562550,
+@article {Gindra2024,
 	author = {Rushin H. Gindra and Yi Zheng and Emily J. Green and Mary E. Reid and Sarah A. Mazzilli and Daniel T. Merrick and Eric J. Burks and Vijaya B. Kolachalama and Jennifer E. Beane},
-	title = {Graph perceiver network for lung tumor and premalignant lesion stratification from histopathology},
-	elocation-id = {2023.10.16.562550},
-	year = {2023},
-	doi = {10.1101/2023.10.16.562550},
-	publisher = {Cold Spring Harbor Laboratory},
-	URL = {https://www.biorxiv.org/content/early/2023/10/19/2023.10.16.562550},
-	eprint = {https://www.biorxiv.org/content/early/2023/10/19/2023.10.16.562550.full.pdf},
-	journal = {bioRxiv}
+	title = {Graph perceiver network for lung tumor and bronchial premalignant lesion stratification from histopathology},
+	year = {2024},
+	doi = {10.1016/j.ajpath.2024.03.009},
+	URL = {https://doi.org/10.1016/j.ajpath.2024.03.009},
+	journal = {American Journal of Pathology}
 }
 ```
 </details>
